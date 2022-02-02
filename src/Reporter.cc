@@ -22,6 +22,7 @@
 #include "zeek/input.h"
 #include "zeek/plugin/Manager.h"
 #include "zeek/plugin/Plugin.h"
+#include "zeek/3rdparty/doctest.h"
 
 #ifdef SYSLOG_INT
 extern "C"
@@ -676,10 +677,14 @@ void Reporter::DoLog(const char* prefix, EventHandlerPtr event, FILE* out, Conne
 			}
 
 		s += buffer;
-		s += "\n";
 
-		if ( out )
+		if ( doctest::is_running_in_test )
+			MESSAGE(s);
+		else
+			{
+			s += "\n";
 			fprintf(out, "%s", s.c_str());
+			}
 		}
 
 	if ( alloced )
