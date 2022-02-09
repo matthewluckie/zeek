@@ -1505,6 +1505,8 @@ public:
 	ExprPtr Reduce(Reducer* c, StmtPtr& red_stmt) override;
 	StmtPtr ReduceToSingletons(Reducer* c) override;
 
+	bool CoerceToTableType(TypePtr table_type);
+
 protected:
 	ValPtr AddSetInit(TypePtr t, ValPtr aggr) const;
 

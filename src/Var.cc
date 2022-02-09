@@ -280,7 +280,12 @@ static void make_var(const IDPtr& id, TypePtr t, InitClass c, ExprPtr init,
 				}
 
 			else if ( t->Tag() == TYPE_TABLE )
+				{
 				aggr = make_intrusive<TableVal>(cast_intrusive<TableType>(t), id->GetAttrs());
+				if ( init && init->Tag() == EXPR_LIST &&
+				     ! init->AsListExpr()->CoerceToTableType(t) )
+					id->Error("failed to coerce expr to table type");
+				}
 
 			else if ( t->Tag() == TYPE_VECTOR )
 				aggr = make_intrusive<VectorVal>(cast_intrusive<VectorType>(t));

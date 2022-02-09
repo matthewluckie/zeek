@@ -3543,56 +3543,8 @@ TableConstructorExpr::TableConstructorExpr(ListExprPtr constructor_list,
 	else
 		attrs = arg_attrs2;
 
-	const auto& indices = type->AsTableType()->GetIndices()->GetTypes();
-	const ExprPList& cle = op->AsListExpr()->Exprs();
-
-	// check and promote all assign expressions in ctor list
-	for ( const auto& expr : cle )
-		{
-		if ( expr->Tag() != EXPR_ASSIGN )
-			continue;
-
-		auto idx_expr = expr->AsAssignExpr()->GetOp1();
-		auto val_expr = expr->AsAssignExpr()->GetOp2();
-		auto yield_type = GetType()->AsTableType()->Yield();
-
-		// Promote LHS
-		assert(idx_expr->Tag() == EXPR_LIST);
-		ExprPList& idx_exprs = idx_expr->AsListExpr()->Exprs();
-
-		if ( idx_exprs.length() != static_cast<int>(indices.size()) )
-			continue;
-
-		loop_over_list(idx_exprs, j)
-			{
-			ExprPtr idx = {NewRef{}, idx_exprs[j]};
-
-			auto promoted_idx = check_and_promote_expr(idx, indices[j]);
-
-			if ( promoted_idx )
-				{
-				if ( promoted_idx != idx )
-					Unref(idx_exprs.replace(j, promoted_idx.release()));
-
-				continue;
-				}
-
-			ExprError("inconsistent types in table constructor");
-			return;
-			}
-
-		// Promote RHS
-		if ( auto promoted_val = check_and_promote_expr(val_expr, yield_type) )
-			{
-			if ( promoted_val != val_expr )
-				expr->AsAssignExpr()->SetOp2(promoted_val);
-			}
-		else
-			{
-			ExprError("inconsistent types in table constructor");
-			return;
-			}
-		}
+	if ( ! op->AsListExpr()->CoerceToTableType(type) )
+		ExprError("inconsistent types in table constructor");
 	}
 
 ValPtr TableConstructorExpr::Eval(Frame* f) const
@@ -5219,6 +5171,62 @@ TraversalCode ListExpr::Traverse(TraversalCallback* cb) const
 
 	tc = cb->PostExpr(this);
 	HANDLE_TC_EXPR_POST(tc);
+	}
+
+bool ListExpr::CoerceToTableType(TypePtr table_type)
+	{
+	if ( table_type->Tag() != TYPE_TABLE )
+		return false;
+
+	const auto& indices = table_type->AsTableType()->GetIndices()->GetTypes();
+	auto yield_type = table_type->AsTableType()->Yield();
+
+	// check and promote all assign expressions in ctor list
+	for ( const auto& expr : exprs )
+		{
+		if ( expr->Tag() != EXPR_ASSIGN )
+			continue;
+
+		auto idx_expr = expr->AsAssignExpr()->GetOp1();
+		auto val_expr = expr->AsAssignExpr()->GetOp2();
+
+		// Promote LHS
+		assert(idx_expr->Tag() == EXPR_LIST);
+		ExprPList& idx_exprs = idx_expr->AsListExpr()->Exprs();
+
+		if ( idx_exprs.length() != static_cast<int>(indices.size()) )
+			continue;
+
+		loop_over_list(idx_exprs, j)
+			{
+			ExprPtr idx = {NewRef{}, idx_exprs[j]};
+
+			auto promoted_idx = check_and_promote_expr(idx, indices[j]);
+
+			if ( promoted_idx )
+				{
+				if ( promoted_idx != idx )
+					Unref(idx_exprs.replace(j, promoted_idx.release()));
+
+				continue;
+				}
+
+			return false;
+			}
+
+		// Promote RHS
+		if ( auto promoted_val = check_and_promote_expr(val_expr, yield_type) )
+			{
+			if ( promoted_val != val_expr )
+				expr->AsAssignExpr()->SetOp2(promoted_val);
+			}
+		else
+			{
+			return false;
+			}
+		}
+
+	return true;
 	}
 
 RecordAssignExpr::RecordAssignExpr(const ExprPtr& record, const ExprPtr& init_list, bool is_init)
