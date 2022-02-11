@@ -515,10 +515,8 @@ void Expr::RuntimeErrorWithCallStack(const std::string& msg) const
 		}
 	}
 
-NameExpr::NameExpr(IDPtr arg_id, bool const_init) : Expr(EXPR_NAME), id(std::move(arg_id))
+NameExpr::NameExpr(IDPtr arg_id, DeclType dt) : Expr(EXPR_NAME), id(std::move(arg_id)), dt(dt)
 	{
-	in_const_init = const_init;
-
 	if ( id->IsType() )
 		SetType(make_intrusive<TypeType>(id->GetType()));
 	else
@@ -567,11 +565,18 @@ ExprPtr NameExpr::MakeLvalue()
 	if ( id->IsType() )
 		ExprError("Type name is not an lvalue");
 
-	if ( id->IsConst() && ! in_const_init )
-		ExprError("const is not a modifiable lvalue");
-
-	if ( id->IsOption() && ! in_const_init )
+	if ( id->IsOption() && dt != VAR_OPTION )
 		ExprError("option is not a modifiable lvalue");
+
+	// Only allow consts if it's as the definition or if it's a global and it's
+	// being redef'd
+	if ( id->IsConst() && dt != VAR_CONST && dt != VAR_REDEF )
+		{
+		// if ( id->IsGlobal() )
+		// 	ExprError("global const lvalues are only modifiable using redef");
+		// else
+		ExprError("const is not a modifiable lvalue");
+		}
 
 	return make_intrusive<RefExpr>(IntrusivePtr{NewRef{}, this});
 	}
@@ -1571,7 +1576,6 @@ AddToExpr::AddToExpr(ExprPtr arg_op1, ExprPtr arg_op2)
 		PromoteType(max_type(bt1, bt2), is_vector(op1) || is_vector(op2));
 	else if ( BothString(bt1, bt2) || BothInterval(bt1, bt2) )
 		SetType(base_type(bt1));
-
 	else if ( IsVector(bt1) )
 		{
 		bt1 = op1->GetType()->AsVectorType()->Yield()->Tag();
@@ -1597,7 +1601,11 @@ AddToExpr::AddToExpr(ExprPtr arg_op1, ExprPtr arg_op2)
 		else
 			SetType(op1->GetType());
 		}
-
+	else if ( bt1 == TYPE_TABLE && bt2 == TYPE_LIST )
+		{
+		// TODO: validate that the key types are the same.
+		SetType(op1->GetType());
+		}
 	else
 		ExprError("requires two arithmetic or two string operands");
 	}
@@ -1609,10 +1617,14 @@ ValPtr AddToExpr::Eval(Frame* f) const
 	if ( ! v1 )
 		return nullptr;
 
-	auto v2 = op2->Eval(f);
+	ValPtr v2;
+	if ( v1->GetType()->Tag() != TYPE_TABLE )
+		{
+		v2 = op2->Eval(f);
 
-	if ( ! v2 )
-		return nullptr;
+		if ( ! v2 )
+			return nullptr;
+		}
 
 	if ( is_vector(v1) )
 		{
@@ -1622,6 +1634,13 @@ ValPtr AddToExpr::Eval(Frame* f) const
 			RuntimeError("type-checking failed in vector append");
 
 		return v1;
+		}
+	else if ( v1->GetType()->Tag() == TYPE_TABLE )
+		{
+		if ( op2->Tag() != EXPR_LIST )
+			RuntimeError("must use a list to append to a set/table");
+
+		return op2->AsListExpr()->InitVal(v1->GetType(), v1);
 		}
 
 	if ( auto result = Fold(v1.get(), v2.get()) )
@@ -1696,6 +1715,11 @@ RemoveFromExpr::RemoveFromExpr(ExprPtr arg_op1, ExprPtr arg_op2)
 		PromoteType(max_type(bt1, bt2), is_vector(op1) || is_vector(op2));
 	else if ( BothInterval(bt1, bt2) )
 		SetType(base_type(bt1));
+	else if ( bt1 == TYPE_TABLE && bt2 == TYPE_LIST )
+		{
+		// TODO: validate that the key types are the same.
+		SetType(op1->GetType());
+		}
 	else
 		ExprError("requires two arithmetic operands");
 	}
@@ -1711,6 +1735,16 @@ ValPtr RemoveFromExpr::Eval(Frame* f) const
 
 	if ( ! v2 )
 		return nullptr;
+
+	if ( v1->GetType()->Tag() == TYPE_TABLE )
+		{
+		if ( op2->Tag() != EXPR_LIST )
+			RuntimeError("must use a list to append to a set/table");
+
+		// TODO: how in the hell?
+		//		return op2->AsListExpr()->InitVal(v1->GetType(), v1);
+		return nullptr;
+		}
 
 	if ( auto result = Fold(v1.get(), v2.get()) )
 		{
@@ -5438,7 +5472,7 @@ ExprPtr check_and_promote_expr(ExprPtr e, TypePtr t)
 			return make_intrusive<VectorCoerceExpr>(e, IntrusivePtr{NewRef{}, t->AsVectorType()});
 
 		if ( t->Tag() != TYPE_ERROR && et->Tag() != TYPE_ERROR )
-			t->Error("type clash", e.get());
+			t->Error("1type clash", e.get());
 
 		return nullptr;
 		}

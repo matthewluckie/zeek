@@ -140,7 +140,6 @@ static void make_var(const IDPtr& id, TypePtr t, InitClass c, ExprPtr init,
 			if ( dt != VAR_REDEF )
 				id->Warn("redefinition requires \"redef\"", redef_obj, true);
 			}
-
 		else if ( dt != VAR_REDEF || init || ! attr )
 			{
 			if ( IsFunc(id->GetType()->Tag()) )
@@ -280,12 +279,7 @@ static void make_var(const IDPtr& id, TypePtr t, InitClass c, ExprPtr init,
 				}
 
 			else if ( t->Tag() == TYPE_TABLE )
-				{
 				aggr = make_intrusive<TableVal>(cast_intrusive<TableType>(t), id->GetAttrs());
-				if ( init && init->Tag() == EXPR_LIST &&
-				     ! init->AsListExpr()->CoerceToTableType(t) )
-					id->Error("failed to coerce expr to table type");
-				}
 
 			else if ( t->Tag() == TYPE_VECTOR )
 				aggr = make_intrusive<VectorVal>(cast_intrusive<VectorType>(t));
@@ -314,8 +308,7 @@ static void make_var(const IDPtr& id, TypePtr t, InitClass c, ExprPtr init,
 
 		id->SetConst();
 		}
-
-	if ( dt == VAR_OPTION )
+	else if ( dt == VAR_OPTION )
 		{
 		if ( ! init )
 			id->Error("option variable must be initialized");
@@ -341,7 +334,58 @@ static void make_var(const IDPtr& id, TypePtr t, InitClass c, ExprPtr init,
 void add_global(const IDPtr& id, TypePtr t, InitClass c, ExprPtr init,
                 std::unique_ptr<std::vector<AttrPtr>> attr, DeclType dt)
 	{
-	make_var(id, std::move(t), c, std::move(init), std::move(attr), dt, true);
+	make_var(id, t, c, init, std::move(attr), dt, false);
+
+	if ( t && dt != VAR_REDEF && ! id->HasVal() )
+		{
+		ValPtr aggr;
+		if ( t->Tag() == TYPE_RECORD )
+			{
+			try
+				{
+				aggr = make_intrusive<RecordVal>(cast_intrusive<RecordType>(t));
+				}
+			catch ( InterpreterException& )
+				{
+				id->Error("initialization failed");
+				return;
+				}
+
+			if ( init && t )
+				// Have an initialization and type is not deduced.
+				init = make_intrusive<RecordCoerceExpr>(std::move(init),
+				                                        IntrusivePtr{NewRef{}, t->AsRecordType()});
+			}
+		else if ( t->Tag() == TYPE_TABLE )
+			aggr = make_intrusive<TableVal>(cast_intrusive<TableType>(std::move(t)),
+			                                id->GetAttrs());
+		else if ( t->Tag() == TYPE_VECTOR )
+			aggr = make_intrusive<VectorVal>(cast_intrusive<VectorType>(std::move(t)));
+
+		id->SetVal(aggr);
+		}
+
+	if ( init )
+		{
+		// copy Location to the stack, because AssignExpr may free "init"
+		const Location location = init->GetLocationInfo() ? *init->GetLocationInfo() : no_location;
+
+		auto name_expr = make_intrusive<NameExpr>(id, dt);
+
+		StmtFlowType flow;
+		ExprPtr op_expr;
+		if ( c == INIT_FULL )
+			op_expr = make_intrusive<AssignExpr>(std::move(name_expr), std::move(init), 0, nullptr,
+			                                     id->GetAttrs());
+		else if ( c == INIT_EXTRA )
+			op_expr = make_intrusive<AddToExpr>(std::move(name_expr), std::move(init));
+		else if ( c == INIT_REMOVE )
+			op_expr = make_intrusive<RemoveFromExpr>(std::move(name_expr), std::move(init));
+
+		auto val = op_expr->Eval(nullptr);
+		if ( val )
+			id->SetVal(std::move(val), c);
+		}
 	}
 
 StmtPtr add_local(IDPtr id, TypePtr t, InitClass c, ExprPtr init,
@@ -357,7 +401,7 @@ StmtPtr add_local(IDPtr id, TypePtr t, InitClass c, ExprPtr init,
 		// copy Location to the stack, because AssignExpr may free "init"
 		const Location location = init->GetLocationInfo() ? *init->GetLocationInfo() : no_location;
 
-		auto name_expr = make_intrusive<NameExpr>(id, dt == VAR_CONST);
+		auto name_expr = make_intrusive<NameExpr>(id, dt);
 		auto assign_expr = make_intrusive<AssignExpr>(std::move(name_expr), std::move(init), 0,
 		                                              nullptr, id->GetAttrs());
 		auto stmt = make_intrusive<ExprStmt>(std::move(assign_expr));

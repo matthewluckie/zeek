@@ -268,7 +268,7 @@ static StmtPtr build_local(ID* id, Type* t, InitClass ic, Expr* e,
                            std::vector<AttrPtr>* attrs, DeclType dt,
                            bool do_coverage)
 	{
-	IDPtr id_ptr{AdoptRef{}, id};
+ 	IDPtr id_ptr{AdoptRef{}, id};
 	TypePtr t_ptr{AdoptRef{}, t};
 	ExprPtr e_ptr{AdoptRef{}, e};
 
@@ -1234,21 +1234,25 @@ decl:
 
 	|	TOK_GLOBAL def_global_id opt_type init_class opt_init opt_attr ';'
 			{
+//			printf("global %s:%d\n", start_location.filename, start_location.first_line);
 			build_global($2, $3, $4, $5, $6, VAR_REGULAR);
 			}
 
 	|	TOK_OPTION def_global_id opt_type init_class opt_init opt_attr ';'
 			{
+//			printf("option %s:%d\n", start_location.filename, start_location.first_line);
 			build_global($2, $3, $4, $5, $6, VAR_OPTION);
 			}
 
 	|	TOK_CONST def_global_id opt_type init_class opt_init opt_attr ';'
 			{
+//			printf("const %s:%d\n", start_location.filename, start_location.first_line);
 			build_global($2, $3, $4, $5, $6, VAR_CONST);
 			}
 
 	|	TOK_REDEF global_id opt_type init_class opt_init opt_attr ';'
 			{
+//			printf("redef %s:%d\n", start_location.filename, start_location.first_line);
 			build_global($2, $3, $4, $5, $6, VAR_REDEF);
 			}
 
@@ -2050,8 +2054,7 @@ global_or_event_id:
 					resolving_global_ID ?
 						current_module.c_str() : 0;
 
-				$$ = install_ID($1, module_name,
-				                              true, is_export).release();
+				$$ = install_ID($1, module_name, true, is_export).release();
 				}
 			}
 	;

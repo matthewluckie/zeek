@@ -417,6 +417,9 @@ ExprPtr ExprStmt::StmtExprPtr() const
 
 ValPtr ExprStmt::Exec(Frame* f, StmtFlowType& flow)
 	{
+	if ( strcmp(location->filename, "/Users/tim/Desktop/1752.zeek") == 0 )
+		printf("b\n");
+
 	RegisterAccess();
 	flow = FLOW_NEXT;
 

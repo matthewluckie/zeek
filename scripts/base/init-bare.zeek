@@ -1,3 +1,28 @@
+# type TestKey: record {
+#  k0: string;
+#  k1: string &optional;
+# };
+
+# global init_test_key = [$k0="x"];
+
+# global test_state: table[TestKey] of count = {
+#  [init_test_key] = 5,
+# };
+
+const test_ports: set[port] &redef;
+redef test_ports += { 1111/udp, 3333/tcp };
+redef test_ports -= { 3333/tcp };
+
+module InitTesting;
+
+const new_ports = { 2222/udp };
+redef test_ports += { new_ports };
+
+module GLOBAL;
+
+const test_table: table[count] of count &redef;
+redef test_table += { [1] = 2 };
+
 @load base/bif/const.bif
 @load base/bif/types.bif
 
